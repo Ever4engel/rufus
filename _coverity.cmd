@@ -1,10 +1,10 @@
 @rem *** Internal developer script to run Coverity ***
 @echo off
-call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\Common7\Tools\VsDevCmd.bat"
-set COV_DIR=D:\cov-analysis-win64-2017.07
+call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\Common7\Tools\VsDevCmd.bat"
+set COV_DIR=B:\cov-analysis-win64-2019.03
 set PATH=%PATH%;%COV_DIR%\bin
 set PWD=%~dp0
-set TARGET=x86_32
+set TARGET=x86
 rmdir cov-int /s /q >NUL 2>NUL
 rmdir %TARGET% /s /q >NUL 2>NUL
 del cov-int.zip >NUL 2>NUL

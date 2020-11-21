@@ -1,15 +1,20 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
-set VERSION=3.6
+set VERSION=3.13
 
 del /q *.appx >NUL 2>&1
 del /q *.appxbundle >NUL 2>&1
 del /q *.map >NUL 2>&1
 
-set WDK_PATH=C:\Program Files (x86)\Windows Kits\10\bin\10.0.17763.0\x64
-set MSBUILD_PATH=C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\MSBuild\15.0\Bin
+set WDK_PATH=C:\Program Files (x86)\Windows Kits\10\bin\10.0.18362.0\x64
+set MSBUILD_PATH=C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin
 set MANIFEST=AppxManifest.xml
 set ARCHS=x86 x64 arm arm64
+
+rem if you don't set the temp/tmp you get:
+rem error MSB6001: Invalid command line switch for "CL.exe". System.ArgumentExcep Key being added: 'TEMP'
+set temp=
+set tmp=
 
 cd /d "%~dp0"
 setlocal EnableDelayedExpansion

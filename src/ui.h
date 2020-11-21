@@ -43,18 +43,46 @@
 											  TBSTYLE_AUTOSIZE | TBSTYLE_LIST    | \
 											  TBSTYLE_TOOLTIPS )
 
+// Types of update progress we report
+enum update_progress_type {
+	UPT_PERCENT = 0,
+	UPT_SPEED,
+	UPT_ETA,
+	UPT_MAX
+};
+
+// Size of the download speed history ring.
+#define SPEED_HISTORY_SIZE 20
+
+// The minimum time length of a history sample. By default, each sample is at least 150ms long,
+// which means that, over the course of 20 samples, "current" download speed spans at least 3s
+// into the past.
+#define SPEED_SAMPLE_MIN 150
+
+// The time after which the download starts to be considered "stalled", i.e. the current
+// bandwidth is not printed and the recent download speeds are scratched.
+#define STALL_START_TIME 5000
+
+// Time between screen refreshes will not be shorter than this.
+// NB: In Rufus' case, "screen" means the text overlaid on the progress bar.
+#define SCREEN_REFRESH_INTERVAL 200
+
+// Don't refresh the ETA too often to avoid jerkiness in predictions.
+// This allows ETA to change approximately once per second.
+#define ETA_REFRESH_INTERVAL 990
+
 extern HWND hMultiToolbar, hSaveToolbar, hHashToolbar, hAdvancedDeviceToolbar, hAdvancedFormatToolbar;
 extern HFONT hInfoFont;
 extern UINT_PTR UM_LANGUAGE_MENU_MAX;
-extern BOOL advanced_mode_device, advanced_mode_format, force_large_fat32, app_changed_size;
+extern BOOL advanced_mode_device, advanced_mode_format, force_large_fat32, app_changed_size, windows_to_go_selected;
 extern loc_cmd* selected_locale;
 extern uint64_t persistence_size;
 extern const char *sfd_name, *flash_type[BADLOCKS_PATTERN_TYPES];
 extern char *short_image_path, image_option_txt[128];
-extern int advanced_device_section_height, advanced_format_section_height;
-extern int windows_to_go_selection, persistence_unit_selection;
-extern int selection_default, cbw, ddw, ddbh, bh;
+extern int advanced_device_section_height, advanced_format_section_height, persistence_unit_selection;
+extern int selection_default, cbw, ddw, ddbh, bh, update_progress_type;
 
+extern void SetAccessibleName(HWND hCtrl, const char* name);
 extern void SetComboEntry(HWND hDlg, int data);
 extern void GetBasicControlsWidth(HWND hDlg);
 extern void GetMainButtonsWidth(HWND hDlg);
@@ -63,7 +91,7 @@ extern void GetFullWidth(HWND hDlg);
 extern void PositionMainControls(HWND hDlg);
 extern void AdjustForLowDPI(HWND hDlg);
 extern void SetSectionHeaders(HWND hDlg);
-extern void SetPeristencePos(uint64_t pos);
+extern void SetPersistencePos(uint64_t pos);
 extern void SetPersistenceSize(void);
 extern void TogglePersistenceControls(BOOL display);
 extern void ToggleAdvancedDeviceOptions(BOOL enable);

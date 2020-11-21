@@ -72,13 +72,22 @@
 #define read_swap64(p) bswap_uint64(*(const uint64_t*)(const uint8_t*)(p))
 #define write_swap16(p,v) (*(uint16_t*)(void*)(p)) = bswap_uint16(v)
 #define write_swap32(p,v) (*(uint32_t*)(void*)(p)) = bswap_uint32(v)
-#define write_swap64(p,v) (*(uint32_t*)(void*)(p)) = bswap_uint64(v)
+#define write_swap64(p,v) (*(uint64_t*)(void*)(p)) = bswap_uint64(v)
 
 /*
  * Nibbled from https://github.com/hanji/popcnt/blob/master/populationcount.cpp
- * Since MSVC x86_32 does not have intrinsic popcount64 and I don't have all day
+ * Since MSVC x86_32 and/or ARM don't have intrinsic popcount and I don't have all day
  */
-static __inline int popcnt64(register uint64_t u)
+static __inline uint8_t popcnt8(uint8_t val)
+{
+	static const uint8_t nibble_lookup[16] = {
+		0, 1, 1, 2, 1, 2, 2, 3,
+		1, 2, 2, 3, 2, 3, 3, 4
+	};
+	return nibble_lookup[val & 0x0F] + nibble_lookup[val >> 4];
+}
+
+static __inline uint8_t popcnt64(register uint64_t u)
 {
 	u = (u & 0x5555555555555555) + ((u >> 1) & 0x5555555555555555);
 	u = (u & 0x3333333333333333) + ((u >> 2) & 0x3333333333333333);
@@ -86,7 +95,7 @@ static __inline int popcnt64(register uint64_t u)
 	u = (u & 0x00ff00ff00ff00ff) + ((u >> 8) & 0x00ff00ff00ff00ff);
 	u = (u & 0x0000ffff0000ffff) + ((u >> 16) & 0x0000ffff0000ffff);
 	u = (u & 0x00000000ffffffff) + ((u >> 32) & 0x00000000ffffffff);
-	return (int)u;
+	return (uint8_t)u;
 }
 
 static __inline void *_reallocf(void *ptr, size_t size) {
@@ -104,12 +113,35 @@ static __inline void *_reallocf(void *ptr, size_t size) {
 
 /* MinGW doesn't know these */
 #ifndef WM_CLIENTSHUTDOWN
-#define WM_CLIENTSHUTDOWN 0x3B
+#define WM_CLIENTSHUTDOWN                       0x3B
 #endif
 #ifndef WM_COPYGLOBALDATA
-#define WM_COPYGLOBALDATA 0x49
+#define WM_COPYGLOBALDATA                       0x49
+#endif
+#ifndef INTERNET_OPTION_ENABLE_HTTP_PROTOCOL
+#define INTERNET_OPTION_ENABLE_HTTP_PROTOCOL    148
+#endif
+#ifndef INTERNET_OPTION_HTTP_DECODING
+#define INTERNET_OPTION_HTTP_DECODING           65
+#endif
+#ifndef HTTP_PROTOCOL_FLAG_HTTP2
+#define HTTP_PROTOCOL_FLAG_HTTP2                2
+#endif
+#ifndef ERROR_OFFSET_ALIGNMENT_VIOLATION
+#define ERROR_OFFSET_ALIGNMENT_VIOLATION        327
 #endif
 
 /* The following is used for native ISO mounting in Windows 8 or later */
 #define VIRTUAL_STORAGE_TYPE_VENDOR_MICROSOFT \
 	{ 0xEC984AECL, 0xA0F9, 0x47e9, { 0x90, 0x1F, 0x71, 0x41, 0x5A, 0x66, 0x34, 0x5B } }
+
+/* RISC-V is still bleeding edge */
+#ifndef IMAGE_FILE_MACHINE_RISCV32
+#define IMAGE_FILE_MACHINE_RISCV32 0x5032
+#endif
+#ifndef IMAGE_FILE_MACHINE_RISCV64
+#define IMAGE_FILE_MACHINE_RISCV64 0x5064
+#endif
+#ifndef IMAGE_FILE_MACHINE_RISCV128
+#define IMAGE_FILE_MACHINE_RISCV128 0x5128
+#endif

@@ -33,7 +33,7 @@ LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 IDD_DIALOG DIALOGEX 12, 12, 232, 326
 STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_ACCEPTFILES
-CAPTION "Rufus 3.6.1512"
+CAPTION "Rufus 3.13.1730"
 FONT 9, "Segoe UI Symbol", 400, 0, 0x0
 BEGIN
     LTEXT           "Drive Properties",IDS_DRIVE_PROPERTIES_TXT,8,6,53,12,NOT WS_GROUP
@@ -95,18 +95,20 @@ BEGIN
     DEFPUSHBUTTON   "OK",IDOK,253,216,50,12,WS_GROUP
 END
 
-IDD_CHECKSUM DIALOGEX 0, 0, 301, 70
-STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+IDD_CHECKSUM DIALOGEX 0, 0, 301, 110
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Checksums"
 FONT 9, "Segoe UI Symbol", 400, 0, 0x0
 BEGIN
     LTEXT           "MD5:",IDC_STATIC,9,10,18,8
-    EDITTEXT        IDC_MD5,40,9,197,12,ES_LOWERCASE | ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_MD5,40,9,197,12,ES_AUTOHSCROLL | ES_READONLY
     LTEXT           "SHA1:",IDC_STATIC,9,26,20,8
-    EDITTEXT        IDC_SHA1,40,25,197,12,ES_LOWERCASE | ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_SHA1,40,25,197,12,ES_AUTOHSCROLL | ES_READONLY
     LTEXT           "SHA256:",IDC_STATIC,9,42,27,8
-    EDITTEXT        IDC_SHA256,40,41,197,22,ES_MULTILINE | ES_LOWERCASE | ES_READONLY
-    DEFPUSHBUTTON   "OK",IDOK,243,49,50,12,WS_GROUP
+    EDITTEXT        IDC_SHA256,40,41,197,22,ES_MULTILINE | ES_READONLY
+    DEFPUSHBUTTON   "OK",IDOK,243,86,50,12,WS_GROUP
+    LTEXT           "SHA512:",IDC_STATIC,9,69,27,8
+    EDITTEXT        IDC_SHA512,40,67,197,35,ES_MULTILINE | ES_READONLY
 END
 
 IDD_LICENSE DIALOGEX 0, 0, 335, 213
@@ -276,6 +278,7 @@ BEGIN
     "IDR_SL_MBOOT_C32        RCDATA                  ""../res/syslinux/mboot.c32""\r\n"
     "IDR_GR_GRUB_GRLDR_MBR   RCDATA                  ""../res/grub/grldr.mbr""\r\n"
     "IDR_GR_GRUB2_CORE_IMG   RCDATA                  ""../res/grub2/core.img""\r\n"
+    "IDR_SBR_MSG             RCDATA                  ""../res/mbr/msg.txt""\r\n"
     "IDR_FD_COMMAND_COM      RCDATA                  ""../res/freedos/COMMAND.COM""\r\n"
     "IDR_FD_KERNEL_SYS       RCDATA                  ""../res/freedos/KERNEL.SYS""\r\n"
     "IDR_FD_DISPLAY_EXE      RCDATA                  ""../res/freedos/DISPLAY.EXE""\r\n"
@@ -305,8 +308,6 @@ BEGIN
     "IDR_FD_EGA18_CPX        RCDATA                  ""../res/freedos/EGA18.CPX""\r\n"
     "IDR_XT_HOGGER           RCDATA                  ""../res/hogger/hogger.exe""\r\n"
     "IDR_UEFI_NTFS           RCDATA                  ""../res/uefi/uefi-ntfs.img""\r\n"
-    "IDR_TOGO_SAN_POLICY_XML RCDATA                  ""../res/togo/san_policy.xml""\r\n"
-    "IDR_TOGO_UNATTEND_XML   RCDATA                  ""../res/togo/unattend.xml""\r\n"
     "IDI_LANG_16             RCDATA                  ""../res/icons/lang-16.png""\r\n"
     "IDI_INFO_16             RCDATA                  ""../res/icons/info-16.png""\r\n"
     "IDI_SETTINGS_16         RCDATA                  ""../res/icons/settings-16.png""\r\n"
@@ -394,8 +395,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 3,6,1512,0
- PRODUCTVERSION 3,6,1512,0
+ FILEVERSION 3,13,1730,0
+ PRODUCTVERSION 3,13,1730,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -410,16 +411,16 @@ BEGIN
     BEGIN
         BLOCK "000004b0"
         BEGIN
-            VALUE "Comments", "https://akeo.ie"
+            VALUE "Comments", "https://rufus.ie"
             VALUE "CompanyName", "Akeo Consulting"
             VALUE "FileDescription", "Rufus"
-            VALUE "FileVersion", "3.6.1512"
+            VALUE "FileVersion", "3.13.1730"
             VALUE "InternalName", "Rufus"
-            VALUE "LegalCopyright", "© 2011-2019 Pete Batard (GPL v3)"
-            VALUE "LegalTrademarks", "https://www.gnu.org/copyleft/gpl.html"
-            VALUE "OriginalFilename", "rufus-3.6.exe"
+            VALUE "LegalCopyright", "Â© 2011-2020 Pete Batard (GPL v3)"
+            VALUE "LegalTrademarks", "https://www.gnu.org/licenses/gpl-3.0.html"
+            VALUE "OriginalFilename", "rufus-3.13.exe"
             VALUE "ProductName", "Rufus"
-            VALUE "ProductVersion", "3.6.1512"
+            VALUE "ProductVersion", "3.13.1730"
         END
     END
     BLOCK "VarFileInfo"
@@ -461,6 +462,7 @@ IDR_SL_LDLINUX_V6_SYS   RCDATA                  "../res/syslinux/ldlinux_v6.sys"
 IDR_SL_MBOOT_C32        RCDATA                  "../res/syslinux/mboot.c32"
 IDR_GR_GRUB_GRLDR_MBR   RCDATA                  "../res/grub/grldr.mbr"
 IDR_GR_GRUB2_CORE_IMG   RCDATA                  "../res/grub2/core.img"
+IDR_SBR_MSG             RCDATA                  "../res/mbr/msg.txt"
 IDR_FD_COMMAND_COM      RCDATA                  "../res/freedos/COMMAND.COM"
 IDR_FD_KERNEL_SYS       RCDATA                  "../res/freedos/KERNEL.SYS"
 IDR_FD_DISPLAY_EXE      RCDATA                  "../res/freedos/DISPLAY.EXE"
@@ -490,8 +492,6 @@ IDR_FD_EGA17_CPX        RCDATA                  "../res/freedos/EGA17.CPX"
 IDR_FD_EGA18_CPX        RCDATA                  "../res/freedos/EGA18.CPX"
 IDR_XT_HOGGER           RCDATA                  "../res/hogger/hogger.exe"
 IDR_UEFI_NTFS           RCDATA                  "../res/uefi/uefi-ntfs.img"
-IDR_TOGO_SAN_POLICY_XML RCDATA                  "../res/togo/san_policy.xml"
-IDR_TOGO_UNATTEND_XML   RCDATA                  "../res/togo/unattend.xml"
 IDI_LANG_16             RCDATA                  "../res/icons/lang-16.png"
 IDI_INFO_16             RCDATA                  "../res/icons/info-16.png"
 IDI_SETTINGS_16         RCDATA                  "../res/icons/settings-16.png"

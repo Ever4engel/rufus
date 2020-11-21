@@ -37,16 +37,6 @@ int  nWindowsVersion = WINDOWS_UNDEFINED;
 int  nWindowsBuildNumber = -1;
 char WindowsVersionStr[128] = "Windows ";
 
-// __popcnt16, __popcnt, __popcnt64 are not available for ARM :(
-uint8_t popcnt8(uint8_t val)
-{
-	static const uint8_t nibble_lookup[16] = {
-		0, 1, 1, 2, 1, 2, 2, 3,
-		1, 2, 2, 3, 2, 3, 3, 4
-	};
-	return nibble_lookup[val & 0x0F] + nibble_lookup[val >> 4];
-}
-
 /*
  * Hash table functions - modified From glibc 2.3.2:
  * [Aho,Sethi,Ullman] Compilers: Principles, Techniques and Tools, 1986
@@ -240,8 +230,7 @@ int GetCpuArch(void)
 		return CPU_ARCH_X86_64;
 	case PROCESSOR_ARCHITECTURE_INTEL:
 		return CPU_ARCH_X86_64;
-	// TODO: Set this back to PROCESSOR_ARCHITECTURE_ARM64 when the MinGW headers have it
-	case 12:
+	case PROCESSOR_ARCHITECTURE_ARM64:
 		return CPU_ARCH_ARM_64;
 	case PROCESSOR_ARCHITECTURE_ARM:
 		return CPU_ARCH_ARM_32;
@@ -352,14 +341,17 @@ void GetWindowsVersion(void)
 	else
 		safe_sprintf(vptr, vlen, "%s %s", w, w64);
 
-	// Add the build number for Windows 8.0 and later
+	// Add the build number (including UBR if available) for Windows 8.0 and later
 	nWindowsBuildNumber = vi.dwBuildNumber;
 	if (nWindowsVersion >= 0x62) {
+		int nUbr = ReadRegistryKey32(REGKEY_HKLM, "Software\\Microsoft\\Windows NT\\CurrentVersion\\UBR");
 		vptr = &WindowsVersionStr[safe_strlen(WindowsVersionStr)];
 		vlen = sizeof(WindowsVersionStr) - safe_strlen(WindowsVersionStr) - 1;
-		safe_sprintf(vptr, vlen, " (Build %d)", nWindowsBuildNumber);
+		if (nUbr > 0)
+			safe_sprintf(vptr, vlen, " (Build %d.%d)", nWindowsBuildNumber, nUbr);
+		else
+			safe_sprintf(vptr, vlen, " (Build %d)", nWindowsBuildNumber);
 	}
-
 }
 
 /*
@@ -547,10 +539,17 @@ out:
 	return ret;
 }
 
+/*
+ * Get a resource from the RC. If needed that resource can be duplicated.
+ * If duplicate is true and len is non-zero, the a zeroed buffer of 'len'
+ * size is allocated for the resource. Else the buffer is allocate for
+ * the resource size.
+ */
 unsigned char* GetResource(HMODULE module, char* name, char* type, const char* desc, DWORD* len, BOOL duplicate)
 {
 	HGLOBAL res_handle;
 	HRSRC res;
+	DWORD res_len;
 	unsigned char* p = NULL;
 
 	res = FindResourceA(module, name, type);
@@ -563,18 +562,23 @@ unsigned char* GetResource(HMODULE module, char* name, char* type, const char* d
 		uprintf("Could not load resource '%s': %s\n", desc, WindowsErrorString());
 		goto out;
 	}
-	*len = SizeofResource(module, res);
+	res_len = SizeofResource(module, res);
 
 	if (duplicate) {
-		p = (unsigned char*)malloc(*len);
+		if (*len == 0)
+			*len = res_len;
+		p = (unsigned char*)calloc(*len, 1);
 		if (p == NULL) {
-			uprintf("Coult not allocate resource '%s'\n", desc);
+			uprintf("Could not allocate resource '%s'\n", desc);
 			goto out;
 		}
-		memcpy(p, LockResource(res_handle), *len);
+		memcpy(p, LockResource(res_handle), min(res_len, *len));
+		if (res_len > *len)
+			uprintf("WARNING: Resource '%s' was truncated by %d bytes!\n", desc, res_len - *len);
 	} else {
 		p = (unsigned char*)LockResource(res_handle);
 	}
+	*len = res_len;
 
 out:
 	return p;

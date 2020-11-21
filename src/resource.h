@@ -86,11 +86,10 @@
 #define IDR_SL_MBOOT_C32                404
 #define IDR_GR_GRUB_GRLDR_MBR           450
 #define IDR_GR_GRUB2_CORE_IMG           451
+#define IDR_SBR_MSG                     452
 #define IDR_LC_RUFUS_LOC                500
 #define IDR_XT_HOGGER                   501
 #define IDR_UEFI_NTFS                   502
-#define IDR_TOGO_SAN_POLICY_XML         503
-#define IDR_TOGO_UNATTEND_XML           504
 #define IDM_SELECT                      901
 #define IDM_DOWNLOAD                    902
 #define IDC_DEVICE                      1001
@@ -157,6 +156,7 @@
 #define IDC_MD5                         1071
 #define IDC_SHA1                        1072
 #define IDC_SHA256                      1073
+#define IDC_SHA512                      1112
 #define IDC_SELECTION_ICON              1074
 #define IDC_SELECTION_TEXT              1075
 #define IDC_SELECTION_LINE              1076

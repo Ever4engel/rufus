@@ -41,7 +41,7 @@
 #include "settings.h"
 
 /* Maximum download chunk size, in bytes */
-#define DOWNLOAD_BUFFER_SIZE    10*KB
+#define DOWNLOAD_BUFFER_SIZE    (10*KB)
 /* Default delay between update checks (1 day) */
 #define DEFAULT_UPDATE_INTERVAL (24*3600)
 
@@ -54,6 +54,7 @@ extern HANDLE dialog_handle;
 extern BOOL is_x86_32, close_fido_cookie_prompts;
 static DWORD error_code, fido_len = 0;
 static BOOL force_update_check = FALSE;
+static const char* request_headers = "Accept-Encoding: gzip, deflate";
 
 /*
  * FormatMessage does not handle internet errors
@@ -71,7 +72,6 @@ const char* WinInetErrorString(void)
 	if ((error_code < INTERNET_ERROR_BASE) || (error_code > INTERNET_ERROR_LAST))
 		return WindowsErrorString();
 
-	// TODO: These should be localized on an ad-hoc basis
 	switch(error_code) {
 	case ERROR_INTERNET_OUT_OF_HANDLES:
 		return "No more handles could be generated at this time.";
@@ -241,6 +241,7 @@ static char* GetShortName(const char* url)
 			break;
 		}
 	}
+	memset(short_name, 0, sizeof(short_name));
 	static_strcpy(short_name, &url[i]);
 	// If the URL is followed by a query, remove that part
 	// Make sure we detect escaped queries too
@@ -264,8 +265,8 @@ static HINTERNET GetInternetSession(BOOL bRetry)
 {
 	int i;
 	char agent[64];
-	BOOL r;
-	DWORD dwFlags, dwTimeout = NET_SESSION_TIMEOUT;
+	BOOL r, decodingSupport = TRUE;
+	DWORD dwFlags, dwTimeout = NET_SESSION_TIMEOUT, dwProtocolSupport = HTTP_PROTOCOL_FLAG_HTTP2;
 	HINTERNET hSession = NULL;
 
 	PF_TYPE_DECL(WINAPI, BOOL, InternetGetConnectedState, (LPDWORD, DWORD));
@@ -295,6 +296,10 @@ static HINTERNET GetInternetSession(BOOL bRetry)
 	pfInternetSetOptionA(hSession, INTERNET_OPTION_CONNECT_TIMEOUT, (LPVOID)&dwTimeout, sizeof(dwTimeout));
 	pfInternetSetOptionA(hSession, INTERNET_OPTION_SEND_TIMEOUT, (LPVOID)&dwTimeout, sizeof(dwTimeout));
 	pfInternetSetOptionA(hSession, INTERNET_OPTION_RECEIVE_TIMEOUT, (LPVOID)&dwTimeout, sizeof(dwTimeout));
+	// Enable gzip and deflate decoding schemes
+	pfInternetSetOptionA(hSession, INTERNET_OPTION_HTTP_DECODING, (LPVOID)&decodingSupport, sizeof(decodingSupport));
+	// Enable HTTP/2 protocol support
+	pfInternetSetOptionA(hSession, INTERNET_OPTION_ENABLE_HTTP_PROTOCOL, (LPVOID)&dwProtocolSupport, sizeof(dwProtocolSupport));
 
 out:
 	return hSession;
@@ -316,7 +321,6 @@ uint64_t DownloadToFileOrBuffer(const char* url, const char* file, BYTE** buffer
 	const char* short_name;
 	unsigned char buf[DOWNLOAD_BUFFER_SIZE];
 	char hostname[64], urlpath[128], strsize[32];
-	HWND hProgressBar = NULL;
 	BOOL r = FALSE;
 	DWORD dwSize, dwWritten, dwDownloaded;
 	HANDLE hFile = INVALID_HANDLE_VALUE;
@@ -343,16 +347,8 @@ uint64_t DownloadToFileOrBuffer(const char* url, const char* file, BYTE** buffer
 
 	FormatStatus = 0;
 	DownloadStatus = 404;
-	if (hProgressDialog != NULL) {
-		// Use the progress control provided, if any
-		hProgressBar = GetDlgItem(hProgressDialog, IDC_PROGRESS);
-		if (hProgressBar != NULL) {
-			SendMessage(hProgressBar, PBM_SETSTATE, (WPARAM)PBST_NORMAL, 0);
-			SendMessage(hProgressBar, PBM_SETMARQUEE, FALSE, 0);
-			SendMessage(hProgressBar, PBM_SETPOS, 0, 0);
-		}
-		SendMessage(hProgressDialog, UM_PROGRESS_INIT, 0, 0);
-	}
+	if (hProgressDialog != NULL)
+		UpdateProgressWithInfoInit(hProgressDialog, FALSE);
 
 	assert(url != NULL);
 	if (buffer != NULL)
@@ -393,7 +389,7 @@ uint64_t DownloadToFileOrBuffer(const char* url, const char* file, BYTE** buffer
 		goto out;
 	}
 
-	if (!pfHttpSendRequestA(hRequest, NULL, 0, NULL, 0)) {
+	if (!pfHttpSendRequestA(hRequest, request_headers, -1L, NULL, 0)) {
 		uprintf("Unable to send request: %s", WinInetErrorString());
 		goto out;
 	}
@@ -449,12 +445,8 @@ uint64_t DownloadToFileOrBuffer(const char* url, const char* file, BYTE** buffer
 			goto out;
 		if (!pfInternetReadFile(hRequest, buf, sizeof(buf), &dwDownloaded) || (dwDownloaded == 0))
 			break;
-		if (hProgressDialog != NULL) {
-			SendMessage(hProgressBar, PBM_SETPOS, (WPARAM)((1.0f * MAX_PROGRESS * size) / (1.0f * total_size)), 0);
-			if (bTaskBarProgress)
-				SetTaskbarProgressValue((ULONGLONG)((1.0f * MAX_PROGRESS * size) / (1.0f * total_size)), MAX_PROGRESS);
-			PrintInfo(0, MSG_241, (100.0f*size) / (1.0f*total_size));
-		}
+		if (hProgressDialog != NULL)
+			UpdateProgressWithInfo(OP_NOOP, MSG_241, size, total_size);
 		if (file != NULL) {
 			if (!WriteFile(hFile, buf, dwDownloaded, &dwWritten, NULL)) {
 				uprintf("Error writing file '%s': %s", short_name, WinInetErrorString());
@@ -477,9 +469,8 @@ uint64_t DownloadToFileOrBuffer(const char* url, const char* file, BYTE** buffer
 		DownloadStatus = 200;
 		r = TRUE;
 		if (hProgressDialog != NULL) {
+			UpdateProgressWithInfo(OP_NOOP, MSG_241, total_size, total_size);
 			uprintf("Successfully downloaded '%s'", short_name);
-			SendMessage(hProgressBar, PBM_SETPOS, (WPARAM)MAX_PROGRESS, 0);
-			PrintInfo(0, MSG_241, 100.0f);
 		}
 	}
 
@@ -655,7 +646,7 @@ static DWORD WINAPI CheckForUpdatesThread(LPVOID param)
 		do {
 			for (i=0; (i<30) && (!force_update_check); i++)
 				Sleep(500);
-		} while ((!force_update_check) && ((iso_op_in_progress || format_op_in_progress || (dialog_showing>0))));
+		} while ((!force_update_check) && ((op_in_progress || (dialog_showing > 0))));
 		if (!force_update_check) {
 			if ((ReadSetting32(SETTING_UPDATE_INTERVAL) == -1)) {
 				vuprintf("Check for updates disabled, as per settings.");
@@ -714,6 +705,9 @@ static DWORD WINAPI CheckForUpdatesThread(LPVOID param)
 #endif
 	vuprintf("Using %s for the update check", RUFUS_URL);
 	for (k=0; (k<max_channel) && (!found_new_version); k++) {
+		// Free any previous buffers we might have used
+		safe_free(buf);
+		safe_free(sig);
 		uprintf("Checking %s channel...", channel[k]);
 		// At this stage we can query the server for various update version files.
 		// We first try to lookup for "<appname>_<os_arch>_<os_version_major>_<os_version_minor>.ver"
@@ -738,7 +732,7 @@ static DWORD WINAPI CheckForUpdatesThread(LPVOID param)
 				INTERNET_FLAG_IGNORE_REDIRECT_TO_HTTP|INTERNET_FLAG_IGNORE_REDIRECT_TO_HTTPS|
 				INTERNET_FLAG_NO_COOKIES|INTERNET_FLAG_NO_UI|INTERNET_FLAG_NO_CACHE_WRITE|INTERNET_FLAG_HYPERLINK|
 				((UrlParts.nScheme == INTERNET_SCHEME_HTTPS)?INTERNET_FLAG_SECURE:0), (DWORD_PTR)NULL);
-			if ((hRequest == NULL) || (!pfHttpSendRequestA(hRequest, NULL, 0, NULL, 0))) {
+			if ((hRequest == NULL) || (!pfHttpSendRequestA(hRequest, request_headers, -1L, NULL, 0))) {
 				uprintf("Unable to send request: %s", WinInetErrorString());
 				goto out;
 			}
@@ -785,7 +779,6 @@ static DWORD WINAPI CheckForUpdatesThread(LPVOID param)
 		if (!pfHttpQueryInfoA(hRequest, HTTP_QUERY_CONTENT_LENGTH|HTTP_QUERY_FLAG_NUMBER, (LPVOID)&dwTotalSize, &dwSize, NULL))
 			goto out;
 
-		safe_free(buf);
 		// Make sure the file is NUL terminated
 		buf = (char*)calloc(dwTotalSize+1, 1);
 		if (buf == NULL)
@@ -843,7 +836,7 @@ out:
 	// Start the new download after cleanup
 	if (found_new_version) {
 		// User may have started an operation while we were checking
-		while ((!force_update_check) && (iso_op_in_progress || format_op_in_progress || (dialog_showing > 0))) {
+		while ((!force_update_check) && (op_in_progress || (dialog_showing > 0))) {
 			Sleep(15000);
 		}
 		DownloadNewVersion();
@@ -878,7 +871,7 @@ BOOL CheckForUpdates(BOOL force)
 static DWORD WINAPI DownloadISOThread(LPVOID param)
 {
 	char locale_str[1024], cmdline[sizeof(locale_str) + 512], pipe[MAX_GUID_STRING_LENGTH + 16] = "\\\\.\\pipe\\";
-	char powershell_path[MAX_PATH], icon_path[MAX_PATH] = "", script_path[MAX_PATH] = "";
+	char powershell_path[MAX_PATH], icon_path[MAX_PATH] = { 0 }, script_path[MAX_PATH] = { 0 };
 	char *url = NULL, sig_url[128];
 	uint64_t uncompressed_size;
 	int64_t size = -1;
@@ -903,6 +896,10 @@ static DWORD WINAPI DownloadISOThread(LPVOID param)
 //#define FORCE_URL "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-9.8.0-amd64-netinst.iso"
 #if !defined(FORCE_URL)
 #if defined(RUFUS_TEST)
+	IGNORE_RETVAL(hFile);
+	IGNORE_RETVAL(sig_url);
+	IGNORE_RETVAL(dwCompressedSize);
+	IGNORE_RETVAL(uncompressed_size);
 	// In test mode, just use our local script
 	static_strcpy(script_path, "D:\\Projects\\Fido\\Fido.ps1");
 #else
@@ -925,7 +922,7 @@ static DWORD WINAPI DownloadISOThread(LPVOID param)
 		free(sig);
 		uprintf("Signature is valid ✓");
 		uncompressed_size = *((uint64_t*)&compressed[5]);
-		if ((uncompressed_size < 1 * MB) && (bled_init(_uprintf, NULL, &FormatStatus) >= 0)) {
+		if ((uncompressed_size < 1 * MB) && (bled_init(_uprintf, NULL, NULL, NULL, NULL, &FormatStatus) >= 0)) {
 			fido_script = malloc((size_t)uncompressed_size);
 			size = bled_uncompress_from_buffer_to_buffer(compressed, dwCompressedSize, fido_script, (size_t)uncompressed_size, BLED_COMPRESSION_LZMA);
 			bled_exit();
@@ -978,8 +975,8 @@ static DWORD WINAPI DownloadISOThread(LPVOID param)
 		goto out;
 	}
 
-	static_sprintf(cmdline, "%s -NonInteractive -Sta -NoProfile –ExecutionPolicy Bypass "
-		"-File %s -DisableFirstRunCustomize -PipeName %s -LocData \"%s\" -Icon %s -AppTitle \"%s\"",
+	static_sprintf(cmdline, "\"%s\" -NonInteractive -Sta -NoProfile –ExecutionPolicy Bypass "
+		"-File \"%s\" -DisableFirstRunCustomize -PipeName %s -LocData \"%s\" -Icon \"%s\" -AppTitle \"%s\"",
 		powershell_path, script_path, &pipe[9], locale_str, icon_path, lmprintf(MSG_149));
 	// Signal our Windows alert hook that it should close the IE cookie prompts from Fido
 	close_fido_cookie_prompts = TRUE;
@@ -988,13 +985,21 @@ static DWORD WINAPI DownloadISOThread(LPVOID param)
 	close_fido_cookie_prompts = FALSE;
 	if ((dwExitCode == 0) && PeekNamedPipe(hPipe, NULL, dwPipeSize, NULL, &dwAvail, NULL) && (dwAvail != 0)) {
 		url = malloc(dwAvail + 1);
+		dwSize = 0;
 		if ((url != NULL) && ReadFile(hPipe, url, dwAvail, &dwSize, NULL) && (dwSize > 4)) {
 #else
 	{	{	url = strdup(FORCE_URL);
 			dwSize = (DWORD)strlen(FORCE_URL);
 #endif
 			IMG_SAVE img_save = { 0 };
-			url[dwSize] = 0;
+// WTF is wrong with Microsoft's static analyzer reporting a potential buffer overflow here?!?
+#if defined(_MSC_VER)
+#pragma warning(disable: 6386)
+#endif
+			url[min(dwSize, dwAvail)] = 0;
+#if defined(_MSC_VER)
+#pragma warning(default: 6386)
+#endif
 			EXT_DECL(img_ext, GetShortName(url), __VA_GROUP__("*.iso"), __VA_GROUP__(lmprintf(MSG_036)));
 			img_save.Type = IMG_SAVE_TYPE_ISO;
 			img_save.ImagePath = FileDialog(TRUE, NULL, &img_ext, 0);
@@ -1004,7 +1009,6 @@ static DWORD WINAPI DownloadISOThread(LPVOID param)
 			// Download the ISO and report errors if any
 			SendMessage(hMainDialog, UM_PROGRESS_INIT, 0, 0);
 			FormatStatus = 0;
-			format_op_in_progress = TRUE;
 			SendMessage(hMainDialog, UM_TIMER_START, 0, 0);
 			if (DownloadToFileOrBuffer(url, img_save.ImagePath, NULL, hMainDialog, TRUE) == 0) {
 				SendMessage(hMainDialog, UM_PROGRESS_EXIT, 0, 0);
@@ -1021,7 +1025,6 @@ static DWORD WINAPI DownloadISOThread(LPVOID param)
 				image_path = safe_strdup(img_save.ImagePath);
 				PostMessage(hMainDialog, UM_SELECT_ISO, 0, 0);
 			}
-			format_op_in_progress = FALSE;
 			safe_free(img_save.ImagePath);
 		}
 	}
@@ -1101,7 +1104,7 @@ BOOL IsDownloadable(const char* url)
 	if (hRequest == NULL)
 		goto out;
 
-	if (!pfHttpSendRequestA(hRequest, NULL, 0, NULL, 0))
+	if (!pfHttpSendRequestA(hRequest, request_headers, -1L, NULL, 0))
 		goto out;
 
 	// Get the file size

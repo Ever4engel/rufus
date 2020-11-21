@@ -49,6 +49,12 @@
 #define VHD_FOOTER_TYPE_DYNAMIC_HARD_DISK	0x00000003
 #define VHD_FOOTER_TYPE_DIFFER_HARD_DISK	0x00000004
 
+#define WIM_MAGIC							0x0000004D4957534DULL	// "MSWIM\0\0\0"
+#define WIM_HAS_API_EXTRACT					1
+#define WIM_HAS_7Z_EXTRACT					2
+#define WIM_HAS_API_APPLY					4
+#define WIM_HAS_EXTRACT(r)					(r & (WIM_HAS_API_EXTRACT|WIM_HAS_7Z_EXTRACT))
+
 #define SECONDS_SINCE_JAN_1ST_2000			946684800
 
 /*
@@ -92,6 +98,8 @@ typedef struct vhd_footer {
 PF_TYPE_DECL(WINAPI, HANDLE, WIMCreateFile, (PWSTR, DWORD, DWORD, DWORD, DWORD, PDWORD));
 PF_TYPE_DECL(WINAPI, BOOL, WIMSetTemporaryPath, (HANDLE, PWSTR));
 PF_TYPE_DECL(WINAPI, HANDLE, WIMLoadImage, (HANDLE, DWORD));
+PF_TYPE_DECL(WINAPI, BOOL, WIMMountImage, (PCWSTR, PCWSTR, DWORD, PCWSTR));
+PF_TYPE_DECL(WINAPI, BOOL, WIMUnmountImage, (PCWSTR, PCWSTR, DWORD, BOOL));
 PF_TYPE_DECL(WINAPI, BOOL, WIMApplyImage, (HANDLE, PCWSTR, DWORD));
 PF_TYPE_DECL(WINAPI, BOOL, WIMExtractImagePath, (HANDLE, PWSTR, PWSTR, DWORD));
 PF_TYPE_DECL(WINAPI, BOOL, WIMGetImageInformation, (HANDLE, PVOID, PDWORD));
@@ -100,19 +108,23 @@ PF_TYPE_DECL(WINAPI, DWORD, WIMRegisterMessageCallback, (HANDLE, FARPROC, PVOID)
 PF_TYPE_DECL(WINAPI, DWORD, WIMUnregisterMessageCallback, (HANDLE, FARPROC));
 PF_TYPE_DECL(RPC_ENTRY, RPC_STATUS, UuidCreate, (UUID __RPC_FAR*));
 
+uint32_t wim_nb_files, wim_proc_files, wim_extra_files;
+HANDLE apply_wim_thread = NULL;
+extern int default_thread_priority;
+extern BOOL ignore_boot_marker;
+
 static uint8_t wim_flags = 0;
+static wchar_t wmount_path[MAX_PATH] = { 0 };
 static char sevenzip_path[MAX_PATH];
 static const char conectix_str[] = VHD_FOOTER_COOKIE;
-static uint32_t wim_nb_files, wim_proc_files;
 static BOOL count_files;
-static uint64_t LastRefresh;
 
 static BOOL Get7ZipPath(void)
 {
 	if ( (GetRegistryKeyStr(REGKEY_HKCU, "7-Zip\\Path", sevenzip_path, sizeof(sevenzip_path)))
 	  || (GetRegistryKeyStr(REGKEY_HKLM, "7-Zip\\Path", sevenzip_path, sizeof(sevenzip_path))) ) {
 		static_strcat(sevenzip_path, "\\7z.exe");
-		return (_access(sevenzip_path, 0) != -1);
+		return (_accessU(sevenzip_path, 0) != -1);
 	}
 	return FALSE;
 }
@@ -250,7 +262,7 @@ BOOL IsCompressedBootableImage(const char* path)
 			if (buf == NULL)
 				return FALSE;
 			FormatStatus = 0;
-			bled_init(_uprintf, NULL, &FormatStatus);
+			bled_init(_uprintf, NULL, NULL, NULL, NULL, &FormatStatus);
 			dc = bled_uncompress_to_buffer(path, (char*)buf, MBR_SIZE, file_assoc[i].type);
 			bled_exit();
 			if (dc != MBR_SIZE) {
@@ -266,8 +278,8 @@ BOOL IsCompressedBootableImage(const char* path)
 	return FALSE;
 }
 
-
-BOOL IsBootableImage(const char* path)
+// 0: non-bootable, 1: bootable, 2: forced bootable
+uint8_t IsBootableImage(const char* path)
 {
 	HANDLE handle = INVALID_HANDLE_VALUE;
 	LARGE_INTEGER liImageSize;
@@ -275,8 +287,9 @@ BOOL IsBootableImage(const char* path)
 	DWORD size;
 	size_t i;
 	uint32_t checksum, old_checksum;
-	LARGE_INTEGER ptr;
-	BOOL is_bootable_img = FALSE;
+	uint64_t wim_magic = 0;
+	LARGE_INTEGER ptr = { 0 };
+	uint8_t is_bootable_img = 0;
 
 	uprintf("Disk image analysis:");
 	handle = CreateFileU(path, GENERIC_READ, FILE_SHARE_READ, NULL,
@@ -286,15 +299,20 @@ BOOL IsBootableImage(const char* path)
 		goto out;
 	}
 
-	is_bootable_img = (BOOLEAN)IsCompressedBootableImage(path);
+	is_bootable_img = IsCompressedBootableImage(path) ? 1 : 0;
 	if (img_report.compression_type == BLED_COMPRESSION_NONE)
-		is_bootable_img = (BOOLEAN)AnalyzeMBR(handle, "  Image", FALSE);
+		is_bootable_img = AnalyzeMBR(handle, "  Image", FALSE) ? 1 : (ignore_boot_marker ? 2 : 0);
 
 	if (!GetFileSizeEx(handle, &liImageSize)) {
 		uprintf("  Could not get image size: %s", WindowsErrorString());
 		goto out;
 	}
 	img_report.image_size = (uint64_t)liImageSize.QuadPart;
+	size = sizeof(wim_magic);
+	IGNORE_RETVAL(SetFilePointerEx(handle, ptr, NULL, FILE_BEGIN));
+	img_report.is_windows_img = ReadFile(handle, &wim_magic, size, &size, NULL) && (wim_magic == WIM_MAGIC);
+	if (img_report.is_windows_img)
+		goto out;
 
 	size = sizeof(vhd_footer);
 	if ((img_report.compression_type == BLED_COMPRESSION_NONE) && (img_report.image_size >= (512 + size))) {
@@ -310,7 +328,7 @@ BOOL IsBootableImage(const char* path)
 			if ( (bswap_uint32(footer->file_format_version) != VHD_FOOTER_FILE_FORMAT_V1_0)
 			  || (bswap_uint32(footer->disk_type) != VHD_FOOTER_TYPE_FIXED_HARD_DISK)) {
 				uprintf("  Unsupported type of VHD image");
-				is_bootable_img = FALSE;
+				is_bootable_img = 0;
 				goto out;
 			}
 			// Might as well validate the checksum while we're at it
@@ -333,14 +351,9 @@ out:
 	return is_bootable_img;
 }
 
-#define WIM_HAS_API_EXTRACT 1
-#define WIM_HAS_7Z_EXTRACT  2
-#define WIM_HAS_API_APPLY   4
-#define WIM_HAS_EXTRACT(r) (r & (WIM_HAS_API_EXTRACT|WIM_HAS_7Z_EXTRACT))
-
 // Find out if we have any way to extract/apply WIM files on this platform
 // Returns a bitfield of the methods we can use (1 = Extract using wimgapi, 2 = Extract using 7-Zip, 4 = Apply using wimgapi)
-uint8_t WimExtractCheck(void)
+uint8_t WimExtractCheck(BOOL bSilent)
 {
 	PF_INIT(WIMCreateFile, Wimgapi);
 	PF_INIT(WIMSetTemporaryPath, Wimgapi);
@@ -359,19 +372,69 @@ uint8_t WimExtractCheck(void)
 	if ((wim_flags & WIM_HAS_API_EXTRACT) && pfWIMApplyImage && pfWIMRegisterMessageCallback && pfWIMUnregisterMessageCallback)
 		wim_flags |= WIM_HAS_API_APPLY;
 
-	uprintf("WIM extraction method(s) supported: %s%s%s", (wim_flags & WIM_HAS_7Z_EXTRACT)?"7-Zip":
+	suprintf("WIM extraction method(s) supported: %s%s%s", (wim_flags & WIM_HAS_7Z_EXTRACT)?"7-Zip":
 		((wim_flags & WIM_HAS_API_EXTRACT)?"":"NONE"),
 		(WIM_HAS_EXTRACT(wim_flags) == (WIM_HAS_API_EXTRACT|WIM_HAS_7Z_EXTRACT))?", ":
 		"", (wim_flags & WIM_HAS_API_EXTRACT)?"wimgapi.dll":"");
-	uprintf("WIM apply method supported: %s", (wim_flags & WIM_HAS_API_APPLY)?"wimgapi.dll":"NONE");
+	suprintf("WIM apply method supported: %s", (wim_flags & WIM_HAS_API_APPLY)?"wimgapi.dll":"NONE");
 	return wim_flags;
 }
 
+// Looks like Microsoft's idea of "mount" for WIM images is to just *extract* all
+// files to a mounpoint and pretend it is "mounted", even if you do specify that
+// you're not planning to change the content. So, yeah, this is both super slow
+// and super wasteful of space... These calls are a complete waste of time.
+BOOL WimMountImage(char* pszWimFileName, DWORD dwImageIndex)
+{
+	BOOL r = FALSE;
+	wconvert(temp_dir);
+	wconvert(pszWimFileName);
+	PF_INIT_OR_OUT(WIMMountImage, Wimgapi);
+
+	if (wmount_path[0] != 0) {
+		uprintf("WimMountImage: An image is already mounted");
+		goto out;
+	}
+	if (GetTempFileNameW(wtemp_dir, L"Rufus", 0, wmount_path) == 0) {
+		uprintf("WimMountImage: Can not create mount directory");
+		goto out;
+	}
+	DeleteFileW(wmount_path);
+	if (!CreateDirectoryW(wmount_path, 0)) {
+		uprintf("WimMountImage: Can not create mount directory");
+		goto out;
+	}
+
+	r = pfWIMMountImage(wmount_path, wpszWimFileName, dwImageIndex, NULL);
+	if (!r)
+		uprintf("Could not mount %S on %S: %s", wpszWimFileName, wmount_path, WindowsErrorString());
+
+out:
+	wfree(temp_dir);
+	wfree(pszWimFileName);
+	return r;
+}
+
+BOOL WimUnmountImage(void)
+{
+	BOOL r = FALSE;
+	PF_INIT_OR_OUT(WIMUnmountImage, Wimgapi);
+	if (wmount_path[0] == 0) {
+		uprintf("WimUnmountImage: No image is mounted");
+		goto out;
+	}
+	r = pfWIMUnmountImage(wmount_path, NULL, 0, FALSE);
+	if (!r)
+		uprintf("Could not unmount %S: %s", wmount_path, WindowsErrorString());
+	wmount_path[0] = 0;
+out:
+	return r;
+}
 
 // Extract a file from a WIM image using wimgapi.dll (Windows 7 or later)
 // NB: if you want progress from a WIM callback, you must run the WIM API call in its own thread
 // (which we don't do here) as it won't work otherwise. Thanks go to Erwan for figuring this out!
-BOOL WimExtractFile_API(const char* image, int index, const char* src, const char* dst)
+BOOL WimExtractFile_API(const char* image, int index, const char* src, const char* dst, BOOL bSilent)
 {
 	static char* index_name = "[1].xml";
 	BOOL r = FALSE;
@@ -391,7 +454,7 @@ BOOL WimExtractFile_API(const char* image, int index, const char* src, const cha
 	PF_INIT_OR_OUT(WIMExtractImagePath, Wimgapi);
 	PF_INIT_OR_OUT(WIMCloseHandle, Wimgapi);
 
-	uprintf("Opening: %s:[%d] (API)", image, index);
+	suprintf("Opening: %s:[%d] (API)", image, index);
 	if (GetTempPathW(ARRAYSIZE(wtemp), wtemp) == 0) {
 		uprintf("  Could not fetch temp path: %s", WindowsErrorString());
 		goto out;
@@ -413,7 +476,7 @@ BOOL WimExtractFile_API(const char* image, int index, const char* src, const cha
 		goto out;
 	}
 
-	uprintf("Extracting: %s (From %s)", dst, src);
+	suprintf("Extracting: %s (From %s)", dst, src);
 	if (safe_strcmp(src, index_name) == 0) {
 		if (!pfWIMGetImageInformation(hWim, &wim_info, &dw)) {
 			uprintf("  Could not access WIM info: %s", WindowsErrorString());
@@ -422,7 +485,7 @@ BOOL WimExtractFile_API(const char* image, int index, const char* src, const cha
 		hFile = CreateFileW(wdst, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ,
 			NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 		if ((hFile == INVALID_HANDLE_VALUE) || (!WriteFile(hFile, wim_info, dw, &dw, NULL))) {
-			uprintf("  Could not extract file: %s", WindowsErrorString());
+			suprintf("  Could not extract file: %s", WindowsErrorString());
 			goto out;
 		}
 	} else {
@@ -432,7 +495,7 @@ BOOL WimExtractFile_API(const char* image, int index, const char* src, const cha
 			goto out;
 		}
 		if (!pfWIMExtractImagePath(hImage, wsrc, wdst, 0)) {
-			uprintf("  Could not extract file: %s", WindowsErrorString());
+			suprintf("  Could not extract file: %s", WindowsErrorString());
 			goto out;
 		}
 	}
@@ -440,7 +503,7 @@ BOOL WimExtractFile_API(const char* image, int index, const char* src, const cha
 
 out:
 	if ((hImage != NULL) || (hWim != NULL)) {
-		uprintf("Closing: %s", image);
+		suprintf("Closing: %s", image);
 		if (hImage != NULL) pfWIMCloseHandle(hImage);
 		if (hWim != NULL) pfWIMCloseHandle(hWim);
 	}
@@ -452,7 +515,7 @@ out:
 }
 
 // Extract a file from a WIM image using 7-Zip
-BOOL WimExtractFile_7z(const char* image, int index, const char* src, const char* dst)
+BOOL WimExtractFile_7z(const char* image, int index, const char* src, const char* dst, BOOL bSilent)
 {
 	int n;
 	size_t i;
@@ -460,7 +523,7 @@ BOOL WimExtractFile_7z(const char* image, int index, const char* src, const char
 	char tmpdst[MAX_PATH];
 	char index_prefix[] = "#\\";
 
-	uprintf("Opening: %s:[%d] (7-Zip)", image, index);
+	suprintf("Opening: %s:[%d] (7-Zip)", image, index);
 
 	if ((image == NULL) || (src == NULL) || (dst == NULL))
 		return FALSE;
@@ -469,7 +532,7 @@ BOOL WimExtractFile_7z(const char* image, int index, const char* src, const char
 	// that this breaks!
 	index_prefix[0] = '0' + index;
 
-	uprintf("Extracting: %s (From %s)", dst, src);
+	suprintf("Extracting: %s (From %s)", dst, src);
 
 	// 7z has a quirk where the image index MUST be specified if a
 	// WIM has multiple indexes, but it MUST be removed if there is
@@ -498,13 +561,13 @@ BOOL WimExtractFile_7z(const char* image, int index, const char* src, const char
 	}
 
 	if (n >= 2) {
-		uprintf("  7z.exe did not extract %s", tmpdst);
+		suprintf("  7z.exe did not extract %s", tmpdst);
 		return FALSE;
 	}
 
 	// coverity[toctou]
-	if (rename(tmpdst, dst) != 0) {
-		uprintf("  Could not rename %s to %s: errno %d", tmpdst, dst, errno);
+	if (!MoveFileExU(tmpdst, dst, MOVEFILE_REPLACE_EXISTING)) {
+		uprintf("  Could not rename %s to %s: %s", tmpdst, dst, WindowsErrorString());
 		return FALSE;
 	}
 
@@ -512,17 +575,17 @@ BOOL WimExtractFile_7z(const char* image, int index, const char* src, const char
 }
 
 // Extract a file from a WIM image
-BOOL WimExtractFile(const char* image, int index, const char* src, const char* dst)
+BOOL WimExtractFile(const char* image, int index, const char* src, const char* dst, BOOL bSilent)
 {
-	if ((wim_flags == 0) && (!WIM_HAS_EXTRACT(WimExtractCheck())))
+	if ((wim_flags == 0) && (!WIM_HAS_EXTRACT(WimExtractCheck(TRUE))))
 		return FALSE;
 	if ((image == NULL) || (src == NULL) || (dst == NULL))
 		return FALSE;
 
 	// Prefer 7-Zip as, unsurprisingly, it's faster than the Microsoft way,
 	// but allow fallback if 7-Zip doesn't succeed
-	return ( ((wim_flags & WIM_HAS_7Z_EXTRACT) && WimExtractFile_7z(image, index, src, dst))
-		  || ((wim_flags & WIM_HAS_API_EXTRACT) && WimExtractFile_API(image, index, src, dst)) );
+	return ( ((wim_flags & WIM_HAS_7Z_EXTRACT) && WimExtractFile_7z(image, index, src, dst, bSilent))
+		  || ((wim_flags & WIM_HAS_API_EXTRACT) && WimExtractFile_API(image, index, src, dst, bSilent)) );
 }
 
 // Apply image functionality
@@ -572,7 +635,6 @@ DWORD WINAPI WimProgressCallback(DWORD dwMsgId, WPARAM wParam, LPARAM lParam, PV
 	PWIN32_FIND_DATA pFileData;
 	const char* level = NULL;
 	uint64_t size;
-	float apply_percent;
 
 	switch (dwMsgId) {
 	case WIM_MSG_PROGRESS:
@@ -580,7 +642,7 @@ DWORD WINAPI WimProgressCallback(DWORD dwMsgId, WPARAM wParam, LPARAM lParam, PV
 		// the files have been processed), so we don't use it
 #if 0
 		PrintInfo(0, MSG_267, (DWORD)wParam);
-		UpdateProgress(OP_DOS, 0.98f*(DWORD)wParam);
+		UpdateProgress(OP_FILE_COPY, 0.98f*(DWORD)wParam);
 #endif
 		break;
 	case WIM_MSG_PROCESS:
@@ -593,20 +655,13 @@ DWORD WINAPI WimProgressCallback(DWORD dwMsgId, WPARAM wParam, LPARAM lParam, PV
 		if (count_files) {
 			wim_nb_files++;
 		} else {
-			wim_proc_files++;
-			if (GetTickCount64() > LastRefresh + 100) {
-				// At the end of an actual apply, the WIM API re-lists a bunch of directories it
-				// already processed, so we end up with more entries than counted - ignore those.
-				if (wim_proc_files > wim_nb_files)
-					wim_proc_files = wim_nb_files;
-				LastRefresh = GetTickCount64();
-				// x^3 progress, so as not to give a better idea right from the onset
-				// as to the dismal speed with which the WIM API can actually apply files...
-				apply_percent = 4.636942595f * ((float)wim_proc_files) / ((float)wim_nb_files);
-				apply_percent = apply_percent * apply_percent * apply_percent;
-				PrintInfo(0, MSG_267, apply_percent);
-				UpdateProgress(OP_DOS, apply_percent);
-			}
+			// At the end of an actual apply, the WIM API re-lists a bunch of directories it already processed,
+			// so, even as we try to compensate, we might end up with more entries than counted - ignore those.
+			if (wim_proc_files < wim_nb_files)
+				wim_proc_files++;
+			else
+				wim_extra_files++;
+			UpdateProgressWithInfo(OP_FILE_COPY, MSG_267, wim_proc_files, wim_nb_files);
 		}
 		// Halt on error
 		if (IS_ERROR(FormatStatus)) {
@@ -694,23 +749,34 @@ static DWORD WINAPI WimApplyImageThread(LPVOID param)
 	}
 
 	uprintf("Applying Windows image...");
+	UpdateProgressWithInfoInit(NULL, TRUE);
 	// Run a first pass using WIM_FLAG_NO_APPLY to count the files
 	wim_nb_files = 0;
 	wim_proc_files = 0;
-	LastRefresh = 0;
+	wim_extra_files = 0;
 	count_files = TRUE;
 	if (!pfWIMApplyImage(hImage, wdst, WIM_FLAG_NO_APPLY)) {
 		uprintf("  Could not count the files to apply: %s", WindowsErrorString());
 		goto out;
 	}
+	// The latest Windows 10 ISOs have a ~17.5% discrepancy between the number of
+	// files and directories actually applied vs. the ones counted when not applying.
+	// Therefore, we add a 'safe' 20% to our counted files to compensate for yet
+	// another dismal Microsoft progress reporting API...
+	wim_nb_files += wim_nb_files / 5;
 	count_files = FALSE;
 	// Actual apply
 	if (!pfWIMApplyImage(hImage, wdst, WIM_FLAG_FILEINFO)) {
 		uprintf("  Could not apply image: %s", WindowsErrorString());
 		goto out;
 	}
-	PrintInfo(0, MSG_267, 99.8f);
-	UpdateProgress(OP_DOS, 99.8f);
+	// Ensure that we'll pick if need to readjust our 20% above from user reports
+	if (wim_extra_files > 0)
+		uprintf("Notice: An extra %d files and directories were applied, from the %d expected",
+			wim_extra_files, wim_nb_files);
+	// Re-use extra files as the final progress step
+	wim_extra_files = (wim_nb_files - wim_proc_files) / 3;
+	UpdateProgressWithInfo(OP_FILE_COPY, MSG_267, wim_proc_files + wim_extra_files, wim_nb_files);
 	r = TRUE;
 
 out:
@@ -728,19 +794,20 @@ out:
 
 BOOL WimApplyImage(const char* image, int index, const char* dst)
 {
-	HANDLE handle;
 	DWORD dw = 0;
 	_image = image;
 	_index = index;
 	_dst = dst;
 
-	handle = CreateThread(NULL, 0, WimApplyImageThread, NULL, 0, NULL);
-	if (handle == NULL) {
+	apply_wim_thread = CreateThread(NULL, 0, WimApplyImageThread, NULL, 0, NULL);
+	if (apply_wim_thread == NULL) {
 		uprintf("Unable to start apply-image thread");
 		return FALSE;
 	}
-	WaitForSingleObject(handle, INFINITE);
-	if (!GetExitCodeThread(handle, &dw))
-		return FALSE;
-	return (BOOL)dw;
+	SetThreadPriority(apply_wim_thread, default_thread_priority);
+	WaitForSingleObject(apply_wim_thread, INFINITE);
+	if (!GetExitCodeThread(apply_wim_thread, &dw))
+		dw = 0;
+	apply_wim_thread = NULL;
+	return dw;
 }

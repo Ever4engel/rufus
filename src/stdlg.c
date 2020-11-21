@@ -1,7 +1,7 @@
 /*
  * Rufus: The Reliable USB Formatting Utility
  * Standard Dialog Routines (Browse for folder, About, etc)
- * Copyright © 2011-2019 Pete Batard <pete@akeo.ie>
+ * Copyright © 2011-2020 Pete Batard <pete@akeo.ie>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,7 +45,7 @@
 #include "license.h"
 
 /* Globals */
-extern BOOL is_x86_32, enable_fido;
+extern BOOL is_x86_32;
 static HICON hMessageIcon = (HICON)INVALID_HANDLE_VALUE;
 static char* szMessageText = NULL;
 static char* szMessageTitle = NULL;
@@ -64,11 +64,12 @@ HWND hFidoDlg = NULL;
 BOOL close_fido_cookie_prompts = FALSE;
 
 static int update_settings_reposition_ids[] = {
+	IDI_ICON,
 	IDC_POLICY,
 	IDS_UPDATE_SETTINGS_GRP,
 	IDS_UPDATE_FREQUENCY_TXT,
-	IDS_INCLUDE_BETAS_TXT,
 	IDC_UPDATE_FREQUENCY,
+	IDS_INCLUDE_BETAS_TXT,
 	IDC_INCLUDE_BETAS,
 	IDS_CHECK_NOW_GRP,
 	IDC_CHECK_NOW,
@@ -588,7 +589,7 @@ INT_PTR CALLBACK AboutCallback(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 		ResizeButtonHeight(hDlg, IDOK);
 		static_sprintf(about_blurb, about_blurb_format, lmprintf(MSG_174|MSG_RTF),
 			lmprintf(MSG_175|MSG_RTF, rufus_version[0], rufus_version[1], rufus_version[2]),
-			"Copyright © 2011-2019 Pete Batard / Akeo",
+			"Copyright © 2011-2020 Pete Batard / Akeo",
 			lmprintf(MSG_176|MSG_RTF), lmprintf(MSG_177|MSG_RTF), lmprintf(MSG_178|MSG_RTF));
 		for (i=0; i<ARRAYSIZE(hEdit); i++) {
 			hEdit[i] = GetDlgItem(hDlg, edit_id[i]);
@@ -811,19 +812,18 @@ BOOL Notification(int type, const char* dont_display_setting, const notification
 {
 	BOOL ret;
 	va_list args;
-	const int max_msg_size = 1024;
 
 	dialog_showing++;
-	szMessageText = (char*)malloc(max_msg_size);
+	szMessageText = (char*)malloc(LOC_MESSAGE_SIZE);
 	if (szMessageText == NULL)
 		return FALSE;
 	szMessageTitle = safe_strdup(title);
 	if (szMessageTitle == NULL)
 		return FALSE;
 	va_start(args, format);
-	safe_vsnprintf(szMessageText, max_msg_size -1, format, args);
+	safe_vsnprintf(szMessageText, LOC_MESSAGE_SIZE - 1, format, args);
 	va_end(args);
-	szMessageText[max_msg_size -1] = 0;
+	szMessageText[LOC_MESSAGE_SIZE - 1] = 0;
 	notification_more_info = more_info;
 	notification_is_question = FALSE;
 	notification_dont_display_setting = dont_display_setting;
@@ -1313,15 +1313,16 @@ BOOL SetTaskbarProgressValue(ULONGLONG ullCompleted, ULONGLONG ullTotal)
 	return !FAILED(ITaskbarList3_SetProgressValue(ptbl, hMainDialog, ullCompleted, ullTotal));
 }
 
-static void Reposition(HWND hDlg, int id, int dx, int dw)
+static void Reposition(HWND hDlg, int id, int prev_id, int dx, int dw)
 {
-	HWND hCtrl;
+	HWND hCtrl, hPrevCtrl;
 	RECT rc;
 
 	hCtrl = GetDlgItem(hDlg, id);
+	hPrevCtrl = (prev_id > 0) ? GetDlgItem(hDlg, prev_id) : HWND_TOP;
 	GetWindowRect(hCtrl, &rc);
 	MapWindowPoints(NULL, hDlg, (POINT*)&rc, 2);
-	SetWindowPos(hCtrl, HWND_TOP, rc.left + dx, rc.top, rc.right - rc.left + dw, rc.bottom - rc.top, 0);
+	SetWindowPos(hCtrl, hPrevCtrl, rc.left + dx, rc.top, rc.right - rc.left + dw, rc.bottom - rc.top, 0);
 }
 
 static void PositionControls(HWND hDlg)
@@ -1339,8 +1340,9 @@ static void PositionControls(HWND hDlg)
 	if (dw > 0) {
 		GetWindowRect(hDlg, &rc);
 		SetWindowPos(hDlg, NULL, -1, -1, rc.right - rc.left + dw, rc.bottom - rc.top, SWP_NOMOVE | SWP_NOZORDER);
-		for (i = 0; i < ARRAYSIZE(update_settings_reposition_ids); i++)
-			Reposition(hDlg, update_settings_reposition_ids[i], (i < 4) ? 0 : dw, (i >= 4) ? 0 : dw);
+		for (i = 1; i < ARRAYSIZE(update_settings_reposition_ids); i++)
+			Reposition(hDlg, update_settings_reposition_ids[i], update_settings_reposition_ids[i-1],
+				((i < 5) && (i != 4)) ? 0 : dw, ((i >= 5) || (i == 4)) ? 0 : dw);
 	}
 
 	hCtrl = GetDlgItem(hDlg, IDC_UPDATE_FREQUENCY);
@@ -1358,10 +1360,11 @@ static void PositionControls(HWND hDlg)
 	if (dw > 0) {
 		GetWindowRect(hDlg, &rc);
 		SetWindowPos(hDlg, NULL, -1, -1, rc.right - rc.left + dw, rc.bottom - rc.top, SWP_NOMOVE | SWP_NOZORDER);
-		for (i = 0; i < ARRAYSIZE(update_settings_reposition_ids); i++) {
-			if ((i >= 2) && (i <= 3))
+		for (i = 1; i < ARRAYSIZE(update_settings_reposition_ids); i++) {
+			if ((i == 3) || (i == 5))
 				continue;
-			Reposition(hDlg, update_settings_reposition_ids[i], (i < 6) ? 0 : dw, (i >= 6) ? 0 : dw);
+			Reposition(hDlg, update_settings_reposition_ids[i], update_settings_reposition_ids[i-1],
+				(i < 7) ? 0 : dw, (i >= 7) ? 0 : dw);
 		}
 	}
 
@@ -1373,10 +1376,10 @@ static void PositionControls(HWND hDlg)
 	if (dw > 0) {
 		GetWindowRect(hDlg, &rc);
 		SetWindowPos(hDlg, NULL, -1, -1, rc.right - rc.left + dw, rc.bottom - rc.top, SWP_NOMOVE | SWP_NOZORDER);
-		for (i = 0; i < ARRAYSIZE(update_settings_reposition_ids); i++) {
-			if ((i >= 1) && (i <= 5))
+		for (i = 1; i < ARRAYSIZE(update_settings_reposition_ids); i++) {
+			if ((i >= 2) && (i <= 6))
 				continue;
-			Reposition(hDlg, update_settings_reposition_ids[i], 0, dw);
+			Reposition(hDlg, update_settings_reposition_ids[i], update_settings_reposition_ids[i-1], 0, dw);
 		}
 	}
 	hCtrl = GetDlgItem(hDlg, IDC_CHECK_NOW);
@@ -1465,7 +1468,7 @@ INT_PTR CALLBACK UpdateCallback(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 			dy -= rsz->rc.bottom - rsz->rc.top + 6;	// add the border
 			ResizeMoveCtrl(hDlg, hDlg, 0, 0, 0, -dy, 1.0f);
 			ResizeMoveCtrl(hDlg, hPolicy, 0, 0, 0, -dy, 1.0f);
-			for (i = 1; i < ARRAYSIZE(update_settings_reposition_ids); i++)
+			for (i = 2; i < ARRAYSIZE(update_settings_reposition_ids); i++)
 				ResizeMoveCtrl(hDlg, GetDlgItem(hDlg, update_settings_reposition_ids[i]), 0, -dy, 0, 0, 1.0f);
 		}
 		break;
@@ -1483,9 +1486,9 @@ INT_PTR CALLBACK UpdateCallback(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 		case IDC_UPDATE_FREQUENCY:
 			if (HIWORD(wParam) != CBN_SELCHANGE)
 				break;
-			freq = (int32_t)ComboBox_GetItemData(hFrequency, ComboBox_GetCurSel(hFrequency));
+			freq = (int32_t)ComboBox_GetCurItemData(hFrequency);
 			WriteSetting32(SETTING_UPDATE_INTERVAL, (DWORD)freq);
-			EnableWindow(hBeta, (freq >= 0));
+			EnableWindow(hBeta, (freq >= 0) && is_x86_32);
 			return (INT_PTR)TRUE;
 		case IDC_INCLUDE_BETAS:
 			if (HIWORD(wParam) != CBN_SELCHANGE)
@@ -1496,6 +1499,55 @@ INT_PTR CALLBACK UpdateCallback(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 		break;
 	}
 	return (INT_PTR)FALSE;
+}
+
+/*
+ * Use a thread to enable the download button as this may be a lengthy
+ * operation due to the external download check.
+ */
+static DWORD WINAPI CheckForFidoThread(LPVOID param)
+{
+	static BOOL is_active = FALSE;
+	LONG_PTR style;
+	char* loc = NULL;
+	uint64_t len;
+	HWND hCtrl;
+
+	// Because a user may switch language before this thread has completed,
+	// we need to detect concurrency.
+	// Checking on a static boolean is more than good enough for our purpose.
+	if (is_active)
+		return -1;
+	is_active = TRUE;
+	safe_free(fido_url);
+
+	// Get the Fido URL from parsing a 'Fido.ver' on our server. This enables the use of different
+	// Fido versions from different versions of Rufus, if needed, as opposed to always downloading
+	// the latest release from GitHub, which may contain incompatible changes...
+	len = DownloadToFileOrBuffer(RUFUS_URL "/Fido.ver", NULL, (BYTE**)&loc, NULL, FALSE);
+	if ((len == 0) || (len >= 4 * KB))
+		goto out;
+
+	len++;	// DownloadToFileOrBuffer allocated an extra NUL character if needed
+	fido_url = get_token_data_buffer(FIDO_VERSION, 1, loc, (size_t)len);
+	if (safe_strncmp(fido_url, "https://github.com/pbatard/Fido", 31) != 0) {
+		uprintf("WARNING: Download script URL %s is invalid ✗", fido_url);
+		safe_free(fido_url);
+		goto out;
+	}
+	if (IsDownloadable(fido_url)) {
+		hCtrl = GetDlgItem(hMainDialog, IDC_SELECT);
+		style = GetWindowLongPtr(hCtrl, GWL_STYLE);
+		style |= BS_SPLITBUTTON;
+		SetWindowLongPtr(hCtrl, GWL_STYLE, style);
+		RedrawWindow(hCtrl, NULL, NULL, RDW_ALLCHILDREN | RDW_UPDATENOW);
+		InvalidateRect(hCtrl, NULL, TRUE);
+	}
+
+out:
+	safe_free(loc);
+	is_active = FALSE;
+	return 0;
 }
 
 /*
@@ -1550,27 +1602,10 @@ BOOL SetUpdateCheck(void)
 	if (((ReadRegistryKey32(REGKEY_HKLM, "Microsoft\\PowerShell\\1\\Install") > 0) ||
 		 (ReadRegistryKey32(REGKEY_HKLM, "Microsoft\\PowerShell\\3\\Install") > 0)) &&
 		(ReadSetting32(SETTING_UPDATE_INTERVAL) > 0)) {
-		char *loc = NULL;
-		// Get the Fido URL from parsing a 'Fido.ver' on our server. This enables the use of different
-		// Fido versions from different versions of Rufus, if needed, as opposed to always downloading
-		// the latest release from GitHub, which may contain incompatible changes...
-		uint64_t loc_len = DownloadToFileOrBuffer(RUFUS_URL "/Fido.ver", NULL, (BYTE**)&loc, NULL, FALSE);
-		if ((loc_len != 0) && (loc_len < 4 * KB)) {
-			loc_len++;	// DownloadToFileOrBuffer allocated an extra NUL character if needed
-			fido_url = get_token_data_buffer(FIDO_VERSION, 1, loc, (size_t)loc_len);
-			if (safe_strncmp(fido_url, "https://github.com/pbatard/Fido", 31) != 0) {
-				ubprintf("WARNING: Download script URL %s is invalid ✗", fido_url);
-				safe_free(fido_url);
-			} else {
-				uprintf("Fido URL is %s", fido_url);
-				enable_fido = IsDownloadable(fido_url);
-			}
-		}
-		safe_free(loc);
-	}
-	if (!enable_fido) {
-		ubprintf("Notice: The ISO download feature has been deactivated because %s", (ReadSetting32(SETTING_UPDATE_INTERVAL) <= 0) ?
-			"'Check for updates' is disabled in your settings." : "the remote download script can not be accessed.");
+		CreateThread(NULL, 0, CheckForFidoThread, NULL, 0, NULL);
+	} else {
+		ubprintf("Notice: The ISO download feature has been deactivated because "
+			"'Check for updates' is disabled in your settings.");
 	}
 	return TRUE;
 }
@@ -1857,7 +1892,7 @@ LPCDLGTEMPLATE GetDialogTemplate(int Dialog_ID)
 	int i;
 	const char thai_id[] = "th-TH";
 	size_t len;
-	DWORD size;
+	DWORD size = 0;
 	DWORD* dwBuf;
 	WCHAR* wBuf;
 	LPCDLGTEMPLATE rcTemplate = (LPCDLGTEMPLATE) GetResource(hMainInstance, MAKEINTRESOURCEA(Dialog_ID),
@@ -1999,7 +2034,8 @@ void SetAlertPromptMessages(void)
 	char mui_path[MAX_PATH];
 
 	// Fetch the localized strings in the relevant MUI
-	static_sprintf(mui_path, "%s\\%s\\shell32.dll.mui", system_dir, GetCurrentMUI());
+	// Must use sysnative_dir rather than system_dir as we may not find the MUI's otherwise
+	static_sprintf(mui_path, "%s\\%s\\shell32.dll.mui", sysnative_dir, GetCurrentMUI());
 	mui_lib = LoadLibraryU(mui_path);
 	if (mui_lib != NULL) {
 		// 4097 = "You need to format the disk in drive %c: before you can use it." (dialog text)
@@ -2015,7 +2051,7 @@ void SetAlertPromptMessages(void)
 		}
 		FreeLibrary(mui_lib);
 	}
-	static_sprintf(mui_path, "%s\\%s\\urlmon.dll.mui", system_dir, GetCurrentMUI());
+	static_sprintf(mui_path, "%s\\%s\\urlmon.dll.mui", sysnative_dir, GetCurrentMUI());
 	mui_lib = LoadLibraryU(mui_path);
 	if (mui_lib != NULL) {
 		// 2070 = "Windows Security Warning" (yes, that's what MS uses for a stupid cookie!)

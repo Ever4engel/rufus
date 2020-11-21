@@ -81,6 +81,12 @@
     <ClCompile Include="..\src\ui.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\format_ext.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\format_fat32.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\rufus.h">
@@ -90,9 +96,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\license.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\sys_types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\dos.h">
@@ -156,6 +159,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\ui_data.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\mbr_types.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\gpt_types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

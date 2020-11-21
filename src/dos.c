@@ -2,7 +2,7 @@
  * Rufus: The Reliable USB Formatting Utility
  * DOS boot file extraction, from the FAT12 floppy image in diskcopy.dll
  * (MS WinME DOS) or from the embedded FreeDOS resource files
- * Copyright © 2011-2017 Pete Batard <pete@akeo.ie>
+ * Copyright © 2011-2020 Pete Batard <pete@akeo.ie>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -216,7 +216,7 @@ static BOOL ExtractFAT(int entry, const char* path)
 		uprintf("invalid path supplied for MS-DOS FAT extraction\n");
 		return FALSE;
 	}
-	strcpy(filename, path);
+	static_strcpy(filename, path);
 	pos = strlen(path);
 	fnamepos = pos;
 
@@ -317,6 +317,7 @@ static BOOL ExtractMSDOS(const char* path)
 		goto out;
 	}
 
+	DiskImageSize = 0;
 	DiskImage = (BYTE*)GetResource(hDLL, MAKEINTRESOURCEA(1), "BINFILE", "disk image", &DiskImageSize, TRUE);
 	if (DiskImage == NULL)
 		goto out;
@@ -334,7 +335,7 @@ static BOOL ExtractMSDOS(const char* path)
 			if (memcmp(extractlist[j], &DiskImage[FAT12_ROOTDIR_OFFSET + i*FAT_BYTES_PER_DIRENT], 8+3) == 0) {
 				r = ExtractFAT(i, (j<3)?path:locale_path);
 				if ((j == 2) || (j == 7) || (j == 12))
-					UpdateProgress(OP_DOS, -1.0f);
+					UpdateProgress(OP_FILE_COPY, -1.0f);
 			}
 		}
 	}
@@ -405,7 +406,7 @@ BOOL ExtractFreeDOS(const char* path)
 		uprintf("Successfully wrote '%s' (%d bytes)\n", filename, res_size);
 
 		if ((i == 4) || (i == 10) || (i == 16) || (i == 22) || (i == ARRAYSIZE(res_name)-1))
-			UpdateProgress(OP_DOS, -1.0f);
+			UpdateProgress(OP_FILE_COPY, -1.0f);
 	}
 
 	return SetDOSLocale(path, TRUE);
@@ -413,7 +414,7 @@ BOOL ExtractFreeDOS(const char* path)
 
 BOOL ExtractDOS(const char* path)
 {
-	switch(ComboBox_GetItemData(hBootType, ComboBox_GetCurSel(hBootType))) {
+	switch(ComboBox_GetCurItemData(hBootType)) {
 	case BT_MSDOS:
 		return ExtractMSDOS(path);
 	case BT_FREEDOS:

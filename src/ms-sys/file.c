@@ -1,6 +1,6 @@
 /******************************************************************
     Copyright (C) 2009  Henrik Carlqvist
-    Modified for Rufus/Windows (C) 2011-2016  Pete Batard
+    Modified for Rufus/Windows (C) 2011-2019  Pete Batard
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -47,8 +47,10 @@ int64_t write_sectors(HANDLE hDrive, uint64_t SectorSize,
       return -1;
    }
 
-   if(!WriteFile(hDrive, pBuf, Size, &Size, NULL))
+   LastWriteError = 0;
+   if(!WriteFileWithRetry(hDrive, pBuf, Size, &Size, WRITE_RETRIES))
    {
+      LastWriteError = ERROR_SEVERITY_ERROR|FAC(FACILITY_STORAGE)|GetLastError();
       uprintf("write_sectors: Write error %s\n", WindowsErrorString());
       uprintf("  StartSector: 0x%08" PRIx64 ", nSectors: 0x%" PRIx64 ", SectorSize: 0x%" PRIx64 "\n", StartSector, nSectors, SectorSize);
       return -1;
@@ -60,7 +62,8 @@ int64_t write_sectors(HANDLE hDrive, uint64_t SectorSize,
          uprintf("Warning: Possible short write\n");
          return 0;
       }
-      uprintf("write_sectors:write error\n");
+      uprintf("write_sectors: Write error\n");
+      LastWriteError = ERROR_SEVERITY_ERROR|FAC(FACILITY_STORAGE)|ERROR_WRITE_FAULT;
       uprintf("  Wrote: %d, Expected: %" PRIu64 "\n", Size, nSectors*SectorSize);
       uprintf("  StartSector: 0x%08" PRIx64 ", nSectors: 0x%" PRIx64 ", SectorSize: 0x%" PRIx64 "\n", StartSector, nSectors, SectorSize);
       return -1;
@@ -178,8 +181,7 @@ int write_data(FILE *fp, uint64_t Position,
 {
    int r = 0;
    /* Windows' WriteFile() may require a buffer that is aligned to the sector size */
-   /* TODO: We may need to increase the alignment if we get report of issues on 4K */
-   unsigned char *aucBuf = _mm_malloc(MAX_DATA_LEN, 512);
+   unsigned char *aucBuf = _mm_malloc(MAX_DATA_LEN, 4096);
    FAKE_FD* fd = (FAKE_FD*)fp;
    HANDLE hDrive = (HANDLE)fd->_handle;
    uint64_t StartSector, EndSector, NumSectors;

@@ -378,7 +378,7 @@ char* lmprintf(uint32_t msg_id, ...)
 	}
 
 	if (format == NULL) {
-		safe_sprintf(buf[buf_id], LOC_MESSAGE_SIZE-1, "MSG_%03d UNTRANSLATED", msg_id - MSG_000);
+		safe_sprintf(buf[buf_id], LOC_MESSAGE_SIZE-1, "MSG_%03u UNTRANSLATED", msg_id - MSG_000);
 	} else {
 		if (right_to_left_mode && (msg_table != default_msg_table)) {
 			if (is_rtf) {
@@ -389,7 +389,7 @@ char* lmprintf(uint32_t msg_id, ...)
 			pos += sizeof(RIGHT_TO_LEFT_EMBEDDING) - 1;
 		}
 		va_start(args, msg_id);
-		safe_vsnprintf(&buf[buf_id][pos], LOC_MESSAGE_SIZE- 1 - 2*pos, format, args);
+		safe_vsnprintf(&buf[buf_id][pos], LOC_MESSAGE_SIZE - 1 - 2*pos, format, args);
 		va_end(args);
 		if (right_to_left_mode && (msg_table != default_msg_table)) {
 			safe_strcat(buf[buf_id], LOC_MESSAGE_SIZE - 1, POP_DIRECTIONAL_FORMATTING);

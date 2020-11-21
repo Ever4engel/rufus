@@ -4,24 +4,29 @@ Rufus: The Reliable USB Formatting Utility
 [![Build status](https://img.shields.io/appveyor/ci/pbatard/rufus.svg?style=flat-square)](https://ci.appveyor.com/project/pbatard/rufus)
 [![Coverity Scan Build Status](https://img.shields.io/coverity/scan/2172.svg?style=flat-square)](https://scan.coverity.com/projects/pbatard-rufus)
 [![Build contributors](https://img.shields.io/github/contributors/pbatard/rufus.svg?style=flat-square)](https://github.com/pbatard/rufus/graphs/contributors)
+[![Github stats](https://img.shields.io/github/downloads/pbatard/rufus/total.svg?label=downloads%20%28since%202019%29&style=flat-square)](https://github.com/pbatard/rufus/releases)
+[![Release](https://img.shields.io/github/release-pre/pbatard/rufus.svg?style=flat-square)](https://github.com/pbatard/rufus/releases)
 [![Licence](https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square)](https://www.gnu.org/licenses/gpl-3.0.en.html)
 
 ![Rufus logo](https://raw.githubusercontent.com/pbatard/rufus/master/res/icons/rufus-128.png)
 
+Rufus is a utility that helps format and create bootable USB flash drives.
+
 Features
 --------
 
-* Format USB, flash card and virtual drives to FAT/FAT32/NTFS/UDF/exFAT/ReFS
-* Create DOS bootable USB drives, using [FreeDOS](http://www.freedos.org) or MS-DOS (Windows 8.1 or earlier)
+* Format USB, flash card and virtual drives to FAT/FAT32/NTFS/UDF/exFAT/ReFS/ext2/ext3
+* Create DOS bootable USB drives, using [FreeDOS](https://www.freedos.org) or MS-DOS (Windows 8.1 or earlier)
 * Create BIOS or UEFI bootable drives, including [UEFI bootable NTFS](https://github.com/pbatard/uefi-ntfs)
 * Create bootable drives from bootable ISOs (Windows, Linux, etc.)
 * Create bootable drives from bootable disk images, including compressed ones
 * Create [Windows To Go](https://en.wikipedia.org/wiki/Windows_To_Go) drives
+* Create persistent Linux partitions
 * Download official Microsoft Windows 8 or Windows 10 retail ISOs
 * Compute MD5, SHA-1 and SHA-256 checksums of the selected image
-* Twice as fast as Microsoft's USB/DVD tool or UNetbootin, on ISO -> USB creation <sup>(1)</sup>
+* Twice as fast as Microsoft's USB/DVD tool or UNetbootin, on ISO → USB creation <sup>(1)</sup>
 * Perform bad blocks checks, including detection of "fake" flash drives
-* Modern and familiar UI, with [39 languages natively supported](https://github.com/pbatard/rufus/wiki/FAQ#What_languages_are_natively_supported_by_Rufus)
+* Modern and familiar UI, with [38 languages natively supported](https://github.com/pbatard/rufus/wiki/FAQ#What_languages_are_natively_supported_by_Rufus)
 * Small footprint. No installation required.
 * Portable
 * 100% [Free Software](https://www.gnu.org/philosophy/free-sw) ([GPL v3](https://www.gnu.org/licenses/gpl-3.0))
@@ -29,13 +34,13 @@ Features
 Compilation
 -----------
 
-Use either Visual Studio 2017 (version 15.8 or later with SDK 10.0.17134 installed) or MinGW and
+Use either Visual Studio 2019 (version 16.0 or later with SDK 10.0.18362 installed) or MinGW and
 then invoke the `.sln` or `configure`/`make` respectively.
 
 #### Visual Studio
-Note that, since Rufus is an OSI compliant Open Source project, you are entitled to
+Rufus is an OSI compliant Open Source project. You are entitled to
 download and use the *freely available* [Visual Studio Community Edition](https://www.visualstudio.com/vs/community/)
-to build, run or develop for Rufus. As per the Visual Studio Community Edition license
+to build, run or develop for Rufus. As per the Visual Studio Community Edition license,
 this applies regardless of whether you are an individual or a corporate user.
 
 Additional information

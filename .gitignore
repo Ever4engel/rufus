@@ -24,6 +24,7 @@
 *.pdb
 *.plg
 *.res
+*.sig
 *.sdf
 *.suo
 *.swp
@@ -36,8 +37,8 @@
 Makefile
 arm
 arm64
-x86_32
-x86_64
+x64
+x86
 autom4te.cache
 config.guess
 ./config.h
